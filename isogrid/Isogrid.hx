@@ -1,8 +1,13 @@
 package isogrid;
+import haxe.Constraints.Function;
 import haxe.ds.IntMap;
 import haxe.ds.StringMap;
 import haxe.xml.Access;
+import isogrid.enums.EMode;
+import isogrid.enums.EStates;
+import isogrid.enums.EType;
 using isogrid.Helper;
+using haxe.EnumTools;
 
 /**
  * ...
@@ -25,12 +30,12 @@ class Isogrid
 	/**
 	 * Type of cells
 	 */
-	public var states:Map<EStates, String>;
+	public var states:Array<StringMap<String>>;
 	
 	/**
 	 * Describe a level.
 	 */
-	public var startingTiles:IntMap<IsotileParam>;
+	public var startingTiles:IntMap<Array<IsotileParam>>;
 	
 	/**
 	 * Current state of the grid.
@@ -51,7 +56,7 @@ class Isogrid
 		this.originY = y;
 		this.mode = mode;
 		
-		this.states = new Map<EStates, String>();
+		this.states = new Array<StringMap<String>>();
 		
 		halfTileWidth = Std.int(tileWidth / 2);
 		halfTileHeight = Std.int(tileHeight / 2);
@@ -66,16 +71,17 @@ class Isogrid
 		{
 			for (x in 0...width)
 			{
+				var key = getKey(x, y);
 				switch(mode)
 				{
 					case STANDARD:
-						tiles.set( getKey(x, y), (new Isotile(getKey(x, y), Math.round(( x - y) * halfTileWidth + originX - halfTileWidth), Math.round((y + x) * halfTileHeight + originY))));
+						tiles.set( key, (new Isotile(key, Math.round(( x - y) * halfTileWidth + originX - halfTileWidth), Math.round((y + x) * halfTileHeight + originY))));
 					case STAGGERED:
 						if ((y & 1) == 0)
 						{
-							tiles.set( getKey(x, y), new Isotile(getKey(x, y), Math.round(x * tileWidth + originX), Math.round(y * halfTileHeight + originY)));
+							tiles.set( key, new Isotile(key, Math.round(x * tileWidth + originX), Math.round(y * halfTileHeight + originY)));
 						}else{
-							tiles.set( getKey(x, y), new Isotile(getKey(x, y), Math.round(x * tileWidth + halfTileWidth + originX), Math.round(y * halfTileHeight + originY)));
+							tiles.set( key, new Isotile(key, Math.round(x * tileWidth + halfTileWidth + originX), Math.round(y * halfTileHeight + originY)));
 						}
 						
 				}
@@ -84,14 +90,76 @@ class Isogrid
 		}
 	}
 	
-	public function getGraphic(tile:Isotile):Array<String>
+	/**
+	 * This could be overided to change the tiles to draw (quantity, order, etc.)
+	 * @param	tile
+	 * @return
+	 */
+	public function getGraphics(tile:Isotile):Array<String>
 	{
 		var graphics = [];
-		for (state in tile.states)
+		var enumIndex = tile.state.getIndex();
+		switch(tile.state)
 		{
-			graphics.push(states.get(state));
+			case NONE:
+				return null;
+			case ACTION, NEUTRAL:
+				graphics.push(states[enumIndex].get('img'));
+			case EMPTY:
+				
+				if (tile.isHover)
+				{
+					graphics.push(states[enumIndex].get('hover'));
+				}else{
+					graphics.push(states[enumIndex].get('img'));
+				}
+				return graphics;
+			case ALLY(current, attackable, inactive):
+				if (inactive)
+				{
+					graphics.push(states[enumIndex].get('inactive'));
+				}
+				if (attackable)
+				{
+					graphics.push(states[enumIndex].get('attackable'));
+				}
+				if (current)
+				{
+					graphics.push(states[enumIndex].get('current'));
+				}else{
+					graphics.push(states[enumIndex].get('img'));
+				}
+				
+			case ENEMY(current, attackable, inactive):
+				if (inactive)
+				{
+					graphics.push(states[enumIndex].get('inactive'));
+				}
+				if (attackable)
+				{
+					graphics.push(states[enumIndex].get('attackable'));
+				}
+				if (current)
+				{
+					graphics.push(states[enumIndex].get('current'));
+				}else{
+					graphics.push(states[enumIndex].get('img'));
+				}
 		}
+		
+		
 		return graphics;
+	}
+	
+	public function getStartingGraphics(tile:Isotile):Array<IsotileParam>
+	{
+		if (startingTiles.exists(tile.id))
+		{
+			return startingTiles.get(tile.id);
+		}
+		return null;
+		
+		
 	}
 	
 	public function getTileFromWorld(x:Int, y:Int):Isotile
@@ -104,6 +172,9 @@ class Isogrid
 				
 				var mapX = Std.int((x / halfTileWidth + y / halfTileHeight) * 0.5);
 				var mapY = Std.int((y / halfTileHeight - x / halfTileWidth) * 0.5);
+				if (mapX < 0 || mapY < 0 || mapX >= width || mapY >= height)
+					return null;
+				trace(x, y , mapX, mapY);
 				return getTileFromIndex(mapX, mapY);
 			case STAGGERED:
 				return null;
@@ -132,14 +203,63 @@ class Isogrid
 		var world = new Isogrid(_xml.getString("id", "grid"), _xml.getInt("w"), _xml.getInt("h"), _xml.getInt("tileW"), _xml.getInt("tileH"), _xml.getInt("x"), _xml.getInt("y"), Type.createEnum(EMode, _xml.getString("mode", "STANDARD").toUpperCase()) );
 		for (state in _xml.node.states.elements)
 		{
-			world.states.set(Type.createEnum(EStates, state.name.toUpperCase()), path + state.att.img + ext);
+			var stateName = state.name.toUpperCase();
+			
+			try
+			{
+				var stateParam = null;
+				if (stateName == "ALLY" || stateName == "ENEMY")
+				{
+					stateParam = [false, false, false];
+				}
+				
+				var estate = Type.createEnum(EStates, stateName, stateParam );
+				var stateIndex = estate.getIndex();
+				
+				var attributes = new StringMap<String>();
+				for (att in state.x.attributes() )
+				{
+					attributes.set(att, path + state.att.resolve(att) + ext);
+				}
+				world.states[stateIndex] = attributes;
+			}catch (e)
+			{
+				trace('ENUM EStates $stateName doesn\'t exist');
+			}
+			
 		}
-		world.startingTiles = new IntMap<IsotileParam>();
+		world.startingTiles = new IntMap<Array<IsotileParam>>();
 		for (tile in _xml.node.tiles.nodes.tile)
 		{
 			var x = tile.getInt("x");
 			var y = tile.getInt("y");
-			world.startingTiles.set(x + (y * world.width), new IsotileParam(tile.getString("img")));
+			var id = x + (y * world.width);
+			var imgs = [];
+			var type = Type.createEnum(EType, tile.getString("type", "walkable").toUpperCase());
+			var w = tile.getInt("w", 1);
+			var h = tile.getInt("h", 1);
+			
+			for (img in tile.nodes.img)
+			{
+				var offsetX = img.getInt("offsetX");
+				var offsetY = img.getInt("offsetY");
+				var param = new IsotileParam(img.getString("name"), type, path, ext, w, h, offsetX, offsetY);
+	
+				imgs.push(param);
+			}
+			
+			world.startingTiles.set(id, imgs);
+			
+			if (type == UNWALKABLE)
+			{
+				for (i in x...x + w)
+				{
+					for (j in y...y + h)
+					{
+						world.getTileFromIndex(i, j).state = NONE;
+					}
+				}
+			}
 		}
 		return world;
 	}

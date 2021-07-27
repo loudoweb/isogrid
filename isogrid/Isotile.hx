@@ -1,4 +1,5 @@
 package isogrid;
+import isogrid.enums.EStates;
 import lime.app.Event;
 
 /**
@@ -11,7 +12,9 @@ class Isotile
 	public var x:Int;
 	public var y:Int;
 	
-	public var states:Array<EStates>;
+	public var state:EStates;
+	
+	public var isHover:Bool;
 	
 	public var isDirty:Bool;
 
@@ -22,29 +25,37 @@ class Isotile
 		this.y = y;
 		
 		
-		states = [EMPTY];
+		state = EMPTY;
 		
+		isHover = false;
 		isDirty = false;
 	}
 	
-	public function add(state:EStates):Isotile
+	inline public function toggleHover():Bool
 	{
-		if (states.indexOf(state) == -1)
-		{
-			states.push(state);
-			isDirty = true;
-		}
-		return this;
+		isDirty = true;
+		isHover = !isHover;
+		return isHover;
 	}
 	
-	public function remove(state:EStates):Isotile
+	public function setAlly(current:Bool = false, attackable:Bool = false, inactive:Bool = false):Void
 	{
-		if (states.indexOf(state) != -1)
-		{
-			states.remove(state);
-			isDirty = true;
-		}
-		return this;
+
+		state = ALLY(current, attackable, inactive);
+		isDirty = true;
+	}
+	
+	public function setEnemy(current:Bool = false, attackable:Bool = false, inactive:Bool = false):Void
+	{
+
+		state = ENEMY(current, attackable, inactive);
+		isDirty = true;
+	}
+	
+	public function setEmpty():Void
+	{
+		state = EMPTY;
+		isDirty = true;
 	}
 	
 	public function update():Void
