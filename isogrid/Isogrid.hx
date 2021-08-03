@@ -35,15 +35,19 @@ class Isogrid
 	/**
 	 * Describe a level.
 	 */
-	public var startingTiles:IntMap<Array<IsotileParam>>;
+	public var startingTiles:IntMap<StartingData>;
 	
 	/**
 	 * Current state of the grid.
 	 */
 	public var tiles:IntMap<Isotile>;
 	
+	public var pathAssets:StringMap<String>;
+	
 	public var halfTileWidth(default, null):Int;
 	public var halfTileHeight(default, null):Int;
+	
+	var _map:Array<Int>;
 	
 	public function new(id:String, w:Int, h:Int, tileW:Int, tileH:Int, x:Int = 0, y:Int = 0, mode:EMode = STANDARD) 
 	{
@@ -57,6 +61,9 @@ class Isogrid
 		this.mode = mode;
 		
 		this.states = new Array<StringMap<String>>();
+		this.startingTiles = new IntMap<StartingData>();
+		this.pathAssets = new StringMap<String>();
+		
 		
 		halfTileWidth = Std.int(tileWidth / 2);
 		halfTileHeight = Std.int(tileHeight / 2);
@@ -75,13 +82,13 @@ class Isogrid
 				switch(mode)
 				{
 					case STANDARD:
-						tiles.set( key, (new Isotile(key, Math.round(( x - y) * halfTileWidth + originX - halfTileWidth), Math.round((y + x) * halfTileHeight + originY))));
+						tiles.set( key, (new Isotile(key, x, y, Math.round(( x - y) * halfTileWidth + originX - halfTileWidth), Math.round((y + x) * halfTileHeight + originY))));
 					case STAGGERED:
 						if ((y & 1) == 0)
 						{
-							tiles.set( key, new Isotile(key, Math.round(x * tileWidth + originX), Math.round(y * halfTileHeight + originY)));
+							tiles.set( key, new Isotile(key, x, y, Math.round(x * tileWidth + originX), Math.round(y * halfTileHeight + originY)));
 						}else{
-							tiles.set( key, new Isotile(key, Math.round(x * tileWidth + halfTileWidth + originX), Math.round(y * halfTileHeight + originY)));
+							tiles.set( key, new Isotile(key, x, y, Math.round(x * tileWidth + halfTileWidth + originX), Math.round(y * halfTileHeight + originY)));
 						}
 						
 				}
@@ -151,7 +158,7 @@ class Isogrid
 		return graphics;
 	}
 	
-	public function getStartingGraphics(tile:Isotile):Array<IsotileParam>
+	public function getStartingGraphics(tile:Isotile):StartingData
 	{
 		if (startingTiles.exists(tile.id))
 		{
@@ -174,7 +181,7 @@ class Isogrid
 				var mapY = Std.int((y / halfTileHeight - x / halfTileWidth) * 0.5);
 				if (mapX < 0 || mapY < 0 || mapX >= width || mapY >= height)
 					return null;
-				trace(x, y , mapX, mapY);
+
 				return getTileFromIndex(mapX, mapY);
 			case STAGGERED:
 				return null;
@@ -196,6 +203,27 @@ class Isogrid
 	{
 		return x + (y * width);
 	}
+		
+	/**
+	 * Use with Graph.setWorld() haxelib astar
+	 * @return
+	 */
+	public function getMap():Array<Int>
+	{
+		if (_map == null)
+			_map = [];
+		else
+			_map.splice(0, _map.length);
+			
+		for (tile in tiles)
+		{
+			_map[tile.id] = tile.cost;
+		}
+		
+		//TODO isDirty flag to return cache?
+		return _map;
+	}
+	
 	
 	public static function parse(xml:Xml, path:String = "", ext:String = ""):Isogrid
 	{
@@ -228,27 +256,35 @@ class Isogrid
 			}
 			
 		}
-		world.startingTiles = new IntMap<Array<IsotileParam>>();
+		
+		if (_xml.hasNode.path)
+		{
+			var pathAccess = _xml.node.path;
+			for (att in pathAccess.x.attributes())
+			{
+				world.pathAssets.set(att, path + pathAccess.att.resolve(att) + ext); 
+			}
+		}
+
 		for (tile in _xml.node.tiles.nodes.tile)
 		{
 			var x = tile.getInt("x");
 			var y = tile.getInt("y");
 			var id = x + (y * world.width);
-			var imgs = [];
 			var type = Type.createEnum(EType, tile.getString("type", "walkable").toUpperCase());
 			var w = tile.getInt("w", 1);
 			var h = tile.getInt("h", 1);
-			
+			var starting = new StartingData(tile.getString("id"), type, w, h, tile.getBool("behind", false), tile.getBool("alphaHover", false));
 			for (img in tile.nodes.img)
 			{
 				var offsetX = img.getInt("offsetX");
 				var offsetY = img.getInt("offsetY");
-				var param = new IsotileParam(img.getString("name"), type, path, ext, w, h, offsetX, offsetY);
-	
-				imgs.push(param);
+				var image = starting.addImage(img.getString("name"), path, ext, offsetX, offsetY);
+				image.addAnimationData(img.getString("state"), img.x);
 			}
+			world.startingTiles.set(id, starting);
 			
-			world.startingTiles.set(id, imgs);
+			
 			
 			if (type == UNWALKABLE)
 			{
