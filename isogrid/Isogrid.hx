@@ -6,7 +6,7 @@ import haxe.xml.Access;
 import isogrid.enums.EMode;
 import isogrid.enums.EStates;
 import isogrid.enums.EType;
-using isogrid.Helper;
+using kadabra.utils.XMLUtils;
 using haxe.EnumTools;
 
 /**
